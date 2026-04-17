@@ -58,15 +58,19 @@ GitHub repo secrets (`gh secret set`):
 
 ### Weekly trigger (AI industry digest, Saturday mornings)
 
+Architecture: **main Sonnet orchestrator + 7 parallel Sonnet subagents** (Task tool), one per category (Models, Products, Open Source, Infra, Hardware, Regulation, People). Self-healing — retry failed subagents, fall back to direct WebSearch, skip empty sections gracefully.
+
 1. Create new trigger on https://claude.ai/settings/triggers — name `SKAI Tracker — AI Weekly`.
 2. Repository: `sergeysulimko/skai-tracker` with write-permissions (reuse the same GitHub App connector).
 3. Schedule: `3 1 * * 6` (06:03 Asia/Yekaterinburg — Saturday).
-4. Model: `claude-opus-4-7`.
-5. Tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch.
-6. Network access: Trusted (WebSearch/WebFetch; api.telegram.org is **not** called from the sandbox).
+4. Model: `claude-sonnet-4-6`.
+5. Tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, **Task** (needed for parallel subagents).
+6. Network access: **Trusted** (WebSearch/WebFetch; api.telegram.org is **not** called from the sandbox).
 7. Prompt: contents of `prompts/ai-weekly.md` — the block inside ``` ``` fences.
 
-Weekly digest arrives every Saturday ~06:05 local (one push event per week; `notify.py` chunks it into 4-6 Telegram messages automatically).
+Weekly digest arrives every Saturday ~06:05 local (one push event per week; `notify.py` chunks it into 4–6 Telegram messages automatically).
+
+**Why Sonnet + subagents, not Opus solo**: Main orchestrator and all 7 category researchers run on Sonnet 4.6 — WebSearch/verification/Russian synthesis don't require Opus reasoning. Parallel subagents cut wall-clock time ~3–4x (7 categories researched concurrently) and isolate context per category, so main agent synthesizes from 7 compressed reports instead of juggling everything.
 
 ## Manual digest push (testing)
 
