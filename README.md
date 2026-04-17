@@ -27,13 +27,15 @@ The main SKAI monorepo is ~19 GB (turbo cache) with full Next.js / pnpm / CI sta
 skai-tracker/
 ├── .github/workflows/
 │   ├── tracker-notify.yml   # main: on push → send digest to TG
-│   └── tracker-alert.yml    # failure alert + 26h heartbeat
-├── notify.py                # plain python, stdlib only
+│   └── tracker-alert.yml    # failure alert + 26h heartbeat (daily only)
+├── notify.py                # plain python, stdlib only (handles daily + weekly markers)
 ├── digests/
 │   ├── README.md            # convention, excluded from triggers
-│   └── YYYY-MM-DD-anthropic-{tools,news}.md  # generated daily
+│   ├── YYYY-MM-DD-anthropic-{tools,news}.md  # generated daily by Daily trigger
+│   └── YYYY-MM-DD-ai-weekly.md               # generated Saturdays by Weekly trigger
 ├── prompts/
-│   └── anthropic-daily.md   # trigger prompt (paste into claude.ai UI)
+│   ├── anthropic-daily.md   # daily trigger prompt (paste into claude.ai UI)
+│   └── ai-weekly.md         # weekly trigger prompt (paste into claude.ai UI)
 └── README.md
 ```
 
@@ -46,11 +48,25 @@ GitHub repo secrets (`gh secret set`):
 
 ## Trigger setup
 
+### Daily trigger (Anthropic tools + news)
+
 1. `trig_016xQ1ZWXEdHNh1e1jGLCwNd` on https://claude.ai/settings/triggers.
 2. Repository: `sergeysulimko/skai-tracker` with write-permissions (GitHub App connector).
-3. Schedule: `0 4 * * *`.
+3. Schedule: `0 4 * * *` (09:00 Asia/Yekaterinburg).
 4. Network access: Trusted (only WebSearch/WebFetch needed; api.telegram.org is **not** called from the sandbox).
 5. Prompt: contents of `prompts/anthropic-daily.md` — the block inside ``` ``` fences.
+
+### Weekly trigger (AI industry digest, Saturday mornings)
+
+1. Create new trigger on https://claude.ai/settings/triggers — name `SKAI Tracker — AI Weekly`.
+2. Repository: `sergeysulimko/skai-tracker` with write-permissions (reuse the same GitHub App connector).
+3. Schedule: `3 1 * * 6` (06:03 Asia/Yekaterinburg — Saturday).
+4. Model: `claude-opus-4-7`.
+5. Tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch.
+6. Network access: Trusted (WebSearch/WebFetch; api.telegram.org is **not** called from the sandbox).
+7. Prompt: contents of `prompts/ai-weekly.md` — the block inside ``` ``` fences.
+
+Weekly digest arrives every Saturday ~06:05 local (one push event per week; `notify.py` chunks it into 4-6 Telegram messages automatically).
 
 ## Manual digest push (testing)
 

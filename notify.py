@@ -105,7 +105,8 @@ def _strip_html(text: str) -> str:
 
 _SELF_CLOSING_TAGS = frozenset({"br", "hr", "img"})
 _BLOCK_BOUNDARY_RE = re.compile(
-    r"\n(?=<(?:blockquote|b>(?:📰|🔧|📊|💡)))", re.IGNORECASE
+    r"\n(?=<(?:blockquote|b>(?:📰|🔧|📊|💡|🗞️|🔥|🧠|📦|🔓|🖥|⚖️|👔|👀)))",
+    re.IGNORECASE,
 )
 
 
