@@ -1,0 +1,63 @@
+name: Tracker Digest → Telegram
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'digests/**.md'
+      - '!digests/README.md'
+  workflow_dispatch:
+    inputs:
+      files:
+        description: "Space-separated digest files (relative to repo root). Empty = latest file in digests/."
+        required: false
+        default: ""
+
+concurrency:
+  group: tracker-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Collect digest files
+        id: collect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_FILES: ${{ github.event.inputs.files }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -n "$MANUAL_FILES" ]]; then
+              FILES="$MANUAL_FILES"
+            else
+              FILES="$(ls -1 digests/*.md 2>/dev/null | grep -v '^digests/README\.md$' | sort | tail -n 1 || true)"
+            fi
+          else
+            FILES="$(git diff --name-only --diff-filter=AM HEAD^ HEAD -- 'digests/*.md' | grep -v '^digests/README\.md$' || true)"
+          fi
+          if [[ -z "$FILES" ]]; then
+            echo "No digest files to process"
+            echo "files=" >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'files<<__EOF__'
+              echo "$FILES"
+              echo '__EOF__'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send digests to Telegram
+        if: steps.collect.outputs.files != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TRACKER_TELEGRAM_CHAT_ID: ${{ secrets.TRACKER_TELEGRAM_CHAT_ID }}
+          DIGEST_FILES: ${{ steps.collect.outputs.files }}
+        run: python3 notify.py

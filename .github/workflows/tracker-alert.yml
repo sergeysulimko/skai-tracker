@@ -1,0 +1,94 @@
+name: Tracker Alerts → Telegram
+
+on:
+  workflow_run:
+    workflows: ["Tracker Digest → Telegram"]
+    types: [completed]
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: tracker-alert
+  cancel-in-progress: false
+
+jobs:
+  notify-failure:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post failure alert to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TRACKER_TELEGRAM_CHAT_ID: ${{ secrets.TRACKER_TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_MSG: ${{ github.event.workflow_run.display_title }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat  = os.environ["TRACKER_TELEGRAM_CHAT_ID"]
+          msg = (
+              f"SKAI Tracker ALERT — workflow failed\n\n"
+              f"Workflow: {os.environ.get('RUN_NAME')}\n"
+              f"Run: {os.environ.get('RUN_URL')}\n"
+              f"SHA: {os.environ.get('HEAD_SHA','')[:12]}\n"
+              f"Commit: {os.environ.get('HEAD_MSG','')[:140]}"
+          )
+          data = json.dumps({"chat_id": chat, "text": msg, "disable_web_page_preview": True}).encode()
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=data, headers={"Content-Type":"application/json"}, method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=30) as r:
+              print(r.status, r.read().decode()[:200])
+          PY
+
+  heartbeat:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+
+      - name: Alert if no digest committed in last 26h
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TRACKER_TELEGRAM_CHAT_ID: ${{ secrets.TRACKER_TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          SINCE="26 hours ago"
+          COUNT=$(git log --since="$SINCE" --name-only --pretty=format: -- 'digests/*.md' \
+                  | grep -v '^digests/README\.md$' \
+                  | grep -cE '\.md$' || true)
+          LAST_COMMIT=$(git log -1 --pretty=format:'%h %cr — %s' -- 'digests/*.md' 2>/dev/null || true)
+          LAST_COMMIT="${LAST_COMMIT:-(none)}"
+          echo "Digests in last 26h: $COUNT"
+          echo "Last commit: $LAST_COMMIT"
+          if [[ "$COUNT" -ge 1 ]]; then
+            echo "Heartbeat OK"
+            exit 0
+          fi
+          export LAST_COMMIT
+          python3 - <<'PY'
+          import json, os, urllib.request
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat  = os.environ["TRACKER_TELEGRAM_CHAT_ID"]
+          last  = os.environ.get("LAST_COMMIT", "(none)")
+          msg = (
+              "SKAI Tracker HEARTBEAT — no digest in 26h\n\n"
+              "Ожидалось: новый файл в digests/ каждые 24h.\n"
+              f"Последний digest-коммит: {last}\n\n"
+              "Проверить remote trigger trig_016xQ1ZWXEdHNh1e1jGLCwNd в claude.ai."
+          )
+          data = json.dumps({"chat_id": chat, "text": msg, "disable_web_page_preview": True}).encode()
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=data, headers={"Content-Type":"application/json"}, method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=30) as r:
+              print(r.status, r.read().decode()[:200])
+          PY
