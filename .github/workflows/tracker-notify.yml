@@ -2,7 +2,6 @@ name: Tracker Digest → Telegram
 
 on:
   push:
-    branches: [main]
     paths:
       - 'digests/**.md'
       - '!digests/README.md'
@@ -21,11 +20,12 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Collect digest files
         id: collect
@@ -61,3 +61,18 @@ jobs:
           TRACKER_TELEGRAM_CHAT_ID: ${{ secrets.TRACKER_TELEGRAM_CHAT_ID }}
           DIGEST_FILES: ${{ steps.collect.outputs.files }}
         run: python3 notify.py
+
+      - name: Merge branch into main and delete (non-main pushes only)
+        if: steps.collect.outputs.files != '' && github.ref != 'refs/heads/main' && startsWith(github.ref, 'refs/heads/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "skai-tracker-bot"
+          git config user.email "tracker-bot@skai"
+          git fetch origin main
+          git checkout main
+          git merge --ff-only "origin/$BRANCH" || git merge --no-ff -m "merge: $BRANCH" "origin/$BRANCH"
+          git push origin main
+          git push origin --delete "$BRANCH" || true
