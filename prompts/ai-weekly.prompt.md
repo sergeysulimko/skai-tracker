@@ -568,7 +568,81 @@ TL;DR пиши В ПОСЛЕДНЮЮ ОЧЕРЕДЬ — когда вся кар
 
 ## ====== ФАЗА 6: WRITE + COMMIT + PUSH ======
 
-1. Write tool: `digests/YYYY-MM-DD-ai-weekly.md` (YYYY-MM-DD = TODAY, UTC).
+### ⚠️ КРИТИЧНО — избегай Stream idle timeout
+
+Финальный digest может быть 15-25К символов. Если попробовать написать всё одним гигантским Write tool вызовом — ловишь `Stream idle timeout - partial response received` (модель задумывается между токенами при длинной генерации → stream dies).
+
+**ПРАВИЛЬНЫЙ паттерн: progressive append через Bash heredoc.**
+
+Каждый tool вызов ≤ 3-4К символов. Никакого single Write с 15K+ content.
+
+1. Создай файл с заголовком (короткий Write):
+
+```bash
+FILE="digests/$(date -u +%Y-%m-%d)-ai-weekly.md"
+cat > "$FILE" <<'HEAD'
+<b>🗞️ AI Weekly · [ДД мес TODAY]</b>
+<i>за [ДД мес WEEK_START] – [ДД мес TODAY]</i>
+
+HEAD
+```
+
+2. Дополни TL;DR (отдельный Bash heredoc):
+
+```bash
+cat >> "$FILE" <<'TLDR'
+<blockquote expandable><b>📊 TL;DR</b>
+3-4 строки главного за неделю.</blockquote>
+
+TLDR
+```
+
+3. Дополни секцию «🔥 Критично» + её blockquote'ы (один heredoc на секцию, блоки внутри):
+
+```bash
+cat >> "$FILE" <<'CRIT'
+<b>🔥 Критично — не пропусти</b>
+
+<blockquote><b>[14 апр] 🔴 Заголовок 1</b>
+Тело новости. <a href="URL1">источник →</a> · <a href="URL2">ещё →</a></blockquote>
+
+<blockquote><b>[15 апр] 🔴 Заголовок 2</b>
+Тело. <a href="URL">источник →</a> · <a href="URL">ещё →</a></blockquote>
+
+CRIT
+```
+
+4. По одному heredoc'у для каждой из 7 категорий (🧠, 📦, 🔓, 🔧, 🖥, ⚖️, 👔). Пустые секции — просто пропусти (не пиши heredoc).
+
+5. Watch list + footer:
+
+```bash
+cat >> "$FILE" <<'FOOT'
+<blockquote expandable><b>👀 Watch list — следить в ближайшие недели</b>
+· Пункт 1
+· Пункт 2</blockquote>
+
+<i>N новостей · период [ДД мес] – [ДД мес] · верифицировано по 2+ источникам</i>
+FOOT
+```
+
+6. Валидация после всех append'ов:
+
+```bash
+# Проверка что количество открытых и закрытых тегов совпадает
+python3 -c "
+import re
+body = open('$FILE').read()
+for tag in ('blockquote', 'b', 'i', 'a'):
+    op = len(re.findall(rf'<{tag}[\s>]', body))
+    cl = len(re.findall(rf'</{tag}>', body))
+    print(f'{tag}: open={op} close={cl}', 'OK' if op==cl else 'MISMATCH')
+"
+```
+
+Если mismatch — используй Edit tool для исправления (точечно, не переписывай весь файл).
+
+**Почему heredoc, а не Write:** Write пропускает всё content через stream модели в один tool-вызов. Heredoc через Bash — shell записывает файл напрямую, модель просто пишет небольшую команду. Избегает idle timeout.
 
 2. Git commit + push:
    ```
